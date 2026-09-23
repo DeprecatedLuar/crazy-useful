@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>serve</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0e0e0e;
+      --surface: #161616;
+      --border: #2a2a2a;
+      --border-bright: #3a3a3a;
+      --text: #e8e8e8;
+      --muted: #666;
+      --accent: #00ff88;
+      --accent-dim: rgba(0, 255, 136, 0.08);
+      --mono: 'IBM Plex Mono', monospace;
+      --sans: 'IBM Plex Sans', sans-serif;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      padding: 48px 32px;
+      max-width: 720px;
+      margin: 0 auto;
+    }
+
+    header {
+      display: flex;
+      align-items: baseline;
+      gap: 16px;
+      margin-bottom: 48px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logo {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--accent);
+      letter-spacing: -0.5px;
+    }
+
+    .logo::before { content: '> '; color: var(--muted); }
+
+    .meta {
+      font-size: 11px;
+      color: var(--muted);
+      font-family: var(--sans);
+    }
+
+    .files-label {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      margin-bottom: 12px;
+    }
+
+    .file-list {
+      list-style: none;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 32px;
+    }
+
+    .file-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      transition: background 0.1s;
+    }
+
+    .file-item:last-child { border-bottom: none; }
+    .file-item:hover { background: var(--surface); }
+
+    .file-icon {
+      font-size: 16px;
+      width: 20px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    .file-name {
+      flex: 1;
+      color: var(--text);
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .file-size {
+      font-size: 11px;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+
+    .file-dl {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      color: var(--muted);
+      text-decoration: none;
+      padding: 4px 8px;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      transition: all 0.1s;
+      flex-shrink: 0;
+    }
+
+    .file-dl:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+      background: var(--accent-dim);
+    }
+
+    .actions {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 24px;
+      background: var(--accent);
+      color: #000;
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 600;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+      letter-spacing: 0.3px;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+
+    .btn-primary:hover { opacity: 0.88; transform: translateY(-1px); }
+    .btn-primary:active { transform: translateY(0); }
+
+    .file-count {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .progress-bar {
+      display: none;
+      height: 2px;
+      background: var(--border);
+      border-radius: 2px;
+      margin-top: 16px;
+      overflow: hidden;
+    }
+
+    .progress-bar.active { display: block; }
+
+    .progress-fill {
+      height: 100%;
+      background: var(--accent);
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    .status-msg {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 8px;
+      min-height: 16px;
+    }
+
+    footer {
+      margin-top: auto;
+      padding-top: 32px;
+      font-size: 11px;
+      color: var(--border-bright);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.03) 2px,
+        rgba(0,0,0,0.03) 4px
+      );
+      pointer-events: none;
+      z-index: 999;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <span class="logo">serve</span>
+    <span class="meta">{{FILE_COUNT}} &nbsp;·&nbsp; {{IP_PORT}}</span>
+  </header>
+
+  <div class="files-label">files</div>
+
+  <ul class="file-list">
+    {{FILE_LIST}}
+  </ul>
+
+  <div class="actions">
+    <button class="btn-primary" onclick="downloadAll()">&#x2193; download all</button>
+    <span class="file-count" id="file-count">{{FILE_COUNT}}</span>
+  </div>
+
+  <div class="progress-bar" id="progress-bar">
+    <div class="progress-fill" id="progress-fill"></div>
+  </div>
+  <div class="status-msg" id="status-msg"></div>
+
+  <footer>
+    <span>served by <strong>serve</strong></span>
+    <span id="ts"></span>
+  </footer>
+
+  <script>
+    document.getElementById('ts').textContent = new Date().toLocaleTimeString();
+
+    function downloadAll() {
+      const links = document.querySelectorAll('.file-dl');
+      const bar = document.getElementById('progress-bar');
+      const fill = document.getElementById('progress-fill');
+      const msg = document.getElementById('status-msg');
+
+      bar.classList.add('active');
+      msg.textContent = 'starting downloads...';
+
+      links.forEach((link, i) => {
+        setTimeout(() => {
+          const a = document.createElement('a');
+          a.href = link.href;
+          a.download = '';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+
+          const pct = Math.round(((i + 1) / links.length) * 100);
+          fill.style.width = pct + '%';
+          msg.textContent = 'downloading ' + (i + 1) + ' of ' + links.length + '...';
+
+          if (i === links.length - 1) {
+            setTimeout(() => { msg.textContent = 'done.'; }, 500);
+          }
+        }, i * 600);
+      });
+    }
+  </script>
+
+</body>
+</html>
