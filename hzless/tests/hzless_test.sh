@@ -359,6 +359,63 @@ test_pl_flag_missing_value() {
   assert_eq 1 "$CODE" "exit"
 }
 
+test_profile_unknown() {
+  hz profile power_saver
+  assert_eq 1 "$CODE" "exit"
+  assert_eq "error: unknown profile 'power_saver' (valid: ${PROFILES[*]})" "$ERR" "error"
+  assert_absent "$TEST_ROOT/pp/set.log" "no write"
+}
+
+test_profile_same_skips() {
+  hz profile "$DEFAULT_PROFILE"
+  assert_eq 0 "$CODE" "exit: $ERR"
+  assert_eq "profile $DEFAULT_PROFILE (unchanged)" "$OUT" "report"
+  assert_absent "$TEST_ROOT/pp/set.log" "no write"
+}
+
+test_profile_waits() {
+  PP_LAG=5 hz profile performance
+  assert_eq 0 "$CODE" "exit: $ERR"
+  assert_contains "$OUT" "profile $DEFAULT_PROFILE -> performance" "report"
+}
+
+test_profile_timeout() {
+  touch "$TEST_ROOT/pp/stuck"
+  hz profile performance
+  assert_eq 2 "$CODE" "exit"
+  assert_contains "$ERR" "profile: wrote performance, still $DEFAULT_PROFILE after 10s" "error"
+}
+
+test_preset_same_profile_no_write() {
+  local khz=3645000 dir
+  echo performance >"$TEST_ROOT/pp/active"
+  hz turbo on
+  hz freq max 3.645g
+  hz preset save g
+  assert_eq 0 "$CODE" "save: $ERR"
+  hz turbo off
+  for dir in cpu0 cpu1; do
+    set_val "cpu/$dir/cpufreq/scaling_max_freq" "$KHZ_BASE"
+  done
+  hz preset use g
+  assert_eq 0 "$CODE" "use: $ERR"
+  assert_absent "$TEST_ROOT/pp/set.log" "no profile write"
+  assert_eq 0 "$(file_val cpu/intel_pstate/no_turbo)" "turbo on"
+  assert_eq "$khz" "$(file_val cpu/cpu0/cpufreq/scaling_max_freq)" "max"
+}
+
+test_preset_bad_profile_no_sudo() {
+  hz preset save p
+  local conf
+  conf=$(<"$(preset_conf)")
+  echo "${conf/profile=$DEFAULT_PROFILE/profile=quiet}" >"$(preset_conf)"
+  rm -f "$TEST_ROOT/sudo.log"
+  hz preset use p
+  assert_eq 1 "$CODE" "exit"
+  assert_contains "$ERR" "unknown profile 'quiet'" "error"
+  assert_absent "$TEST_ROOT/sudo.log" "fails before sudo"
+}
+
 # --- runner ------------------------------------------------------------------
 
 main() {

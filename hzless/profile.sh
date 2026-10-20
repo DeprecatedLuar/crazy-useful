@@ -3,7 +3,13 @@
 readonly PP_BUS="org.freedesktop.UPower.PowerProfiles"
 readonly PP_PATH="/org/freedesktop/UPower/PowerProfiles"
 readonly PP_PROP="ActiveProfile"
+readonly PP_PROFILES_PROP="Profiles"
 readonly RE_PP_REPLY='^s "(.*)"$'
+readonly RE_PP_PROFILE='"Profile" s "([^"]+)"'
+# The daemon may apply a profile before publishing it, so a switch is done
+# once ActiveProfile reads back the new name.
+readonly PROFILE_POLL_SEC=0.1
+readonly PROFILE_TIMEOUT_SEC=10
 
 readonly PROFILE_USAGE="usage: hzless profile <status | <name>>
   status       show the active power profile
@@ -22,14 +28,49 @@ profile_get() {
   echo "${BASH_REMATCH[1]}"
 }
 
+# Profile names the daemon offers, one per line.
+profile_list() {
+  local reply
+  reply=$(busctl --system get-property "$PP_BUS" "$PP_PATH" "$PP_BUS" "$PP_PROFILES_PROP") ||
+    die "$EXIT_HW" "cannot read $PP_PROFILES_PROP from $PP_BUS"
+  while [[ $reply =~ $RE_PP_PROFILE ]]; do
+    echo "${BASH_REMATCH[1]}"
+    reply=${reply#*"${BASH_REMATCH[0]}"}
+  done
+}
+
+profile_check_name() {
+  local names
+  names=$(profile_list) || exit
+  grep -qxF -- "$1" <<<"$names" ||
+    die "$EXIT_USAGE" "unknown profile '$1' (valid: $(paste -sd ' ' <<<"$names"))"
+}
+
+# Polls ActiveProfile until it reads want; fails after PROFILE_TIMEOUT_SEC.
+profile_wait() {
+  local want=$1 current deadline=$((SECONDS + PROFILE_TIMEOUT_SEC))
+  while true; do
+    current=$(profile_get) || exit
+    [[ $current == "$want" ]] && return
+    ((SECONDS < deadline)) ||
+      die "$EXIT_HW" "profile: wrote $want, still $current after ${PROFILE_TIMEOUT_SEC}s"
+    sleep "$PROFILE_POLL_SEC"
+  done
+}
+
+# Switches only when the target differs: a daemon may reapply its own settings
+# on any write, even of the active profile.
 profile_set() {
-  local want=$1 before after
+  local want=$1 before
   before=$(profile_get) || exit
+  if [[ $before == "$want" ]]; then
+    echo "profile $want (unchanged)"
+    return
+  fi
   busctl --system set-property "$PP_BUS" "$PP_PATH" "$PP_BUS" "$PP_PROP" s "$want" ||
     die "$EXIT_HW" "cannot set $PP_PROP to '$want'"
-  after=$(profile_get) || exit
-  [[ $after == "$want" ]] || die "$EXIT_HW" "profile: wrote $want, read $after"
-  echo "profile $before -> $after"
+  profile_wait "$want"
+  echo "profile $before -> $want"
 }
 
 profile_show() {
@@ -47,6 +88,9 @@ cmd_profile() {
   profile_available || die "$EXIT_HW" "no power profile daemon on D-Bus ($PP_BUS)"
   case $1 in
     status) profile_show ;;
-    *) profile_set "$1" ;;
+    *)
+      profile_check_name "$1"
+      profile_set "$1"
+      ;;
   esac
 }

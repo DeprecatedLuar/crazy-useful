@@ -222,10 +222,11 @@ preset_pl_targets() {
   done
 }
 
-# Fails if PRESET names a profile but no daemon is up.
+# Fails if PRESET names a profile the daemon is missing or does not offer.
 preset_check_profile() {
-  [[ -z ${PRESET[profile]:-} ]] || profile_available ||
-    die "$EXIT_HW" "preset sets a power profile but no daemon is on D-Bus"
+  [[ -n ${PRESET[profile]:-} ]] || return 0
+  profile_available || die "$EXIT_HW" "preset sets a power profile but no daemon is on D-Bus"
+  profile_check_name "${PRESET[profile]}"
 }
 
 cmd_preset() {
