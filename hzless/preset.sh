@@ -234,7 +234,7 @@ cmd_preset() {
     echo "$PRESET_USAGE"
     return
   fi
-  local name which
+  local name which order
   case $1 in
     save|add|a)
       shift
@@ -262,15 +262,16 @@ cmd_preset() {
   esac
   preset_load "$name"
   preset_check_profile
+  load_pl
+  preset_pl_targets
   require_root
   # Power profile first: switching it rewrites turbo, freq caps and power limits.
   [[ -z ${PRESET[profile]:-} ]] || profile_set "${PRESET[profile]}"
   turbo_set "${PRESET[turbo]}"
   load_cpus
-  for which in $(preset_freq_order); do
+  order=$(preset_freq_order) || exit
+  for which in $order; do
     preset_freq_apply "$which"
   done
-  load_pl
-  preset_pl_targets
   pl_apply
 }

@@ -416,6 +416,28 @@ test_preset_bad_profile_no_sudo() {
   assert_absent "$TEST_ROOT/sudo.log" "fails before sudo"
 }
 
+test_preset_freq_read_error_fails() {
+  hz preset save p
+  hz pl 20
+  set_val cpu/cpu1/cpufreq/scaling_max_freq garbage
+  hz preset use p
+  assert_eq 2 "$CODE" "exit"
+  assert_contains "$ERR" "unexpected value 'garbage'" "error"
+  assert_eq $((20 * UW_PER_W)) "$(file_val powercap/intel-rapl:0/constraint_0_power_limit_uw)" "PL untouched"
+}
+
+test_preset_bad_pl_key_no_sudo() {
+  hz preset save p
+  local conf
+  conf=$(<"$(preset_conf)")
+  echo "${conf/MMIO.tau=$US_TAU/}" >"$(preset_conf)"
+  rm -f "$TEST_ROOT/sudo.log"
+  hz preset use p
+  assert_eq 2 "$CODE" "exit"
+  assert_contains "$ERR" "bad or missing MMIO.tau" "error"
+  assert_absent "$TEST_ROOT/sudo.log" "fails before sudo"
+}
+
 # --- runner ------------------------------------------------------------------
 
 main() {
