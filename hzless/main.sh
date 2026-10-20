@@ -44,8 +44,8 @@ main() {
     freq) cmd_freq "$@" ;;
     turbo) cmd_turbo "$@" ;;
     pl) cmd_pl "$@" ;;
-    pl1) cmd_pl --long "$@" ;;
-    pl2) cmd_pl --short "$@" ;;
+    pl1) cmd_pl_alias --long "$@" ;;
+    pl2) cmd_pl_alias --short "$@" ;;
     profile) cmd_profile "$@" ;;
     preset) cmd_preset "$@" ;;
     *) usage_error "$USAGE" "unknown command '$command'" ;;

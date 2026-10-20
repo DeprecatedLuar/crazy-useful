@@ -16,15 +16,17 @@ readonly PRESET_USAGE="usage: hzless preset <save <name> [-f] | list | use <name
 
 declare -A PRESET=()
 
-# The invoking user's config, also under sudo.
+# The invoking user's config, also under a direct sudo.
 preset_file() {
   local home
-  if [[ -n ${SUDO_USER:-} ]]; then
+  if [[ -n ${XDG_CONFIG_HOME:-} ]]; then
+    echo "$XDG_CONFIG_HOME/$PRESET_FILE_REL"
+  elif [[ -n ${SUDO_USER:-} ]]; then
     home=$(getent passwd "$SUDO_USER" | cut -d: -f6)
     [[ -n $home ]] || die "$EXIT_HW" "cannot find home of $SUDO_USER"
     echo "$home/.config/$PRESET_FILE_REL"
   else
-    echo "${XDG_CONFIG_HOME:-$HOME/.config}/$PRESET_FILE_REL"
+    echo "$HOME/.config/$PRESET_FILE_REL"
   fi
 }
 
@@ -180,6 +182,16 @@ preset_rm() {
   echo "removed $1"
 }
 
+# Fails if the saved min is below a CPU's floor or above the saved max.
+preset_check_freq() {
+  local dir floor min=${PRESET[min]} max=${PRESET[max]}
+  ((min <= max)) || die "$EXIT_HW" "preset: min $(fmt_ghz "$min") is above max $(fmt_ghz "$max")"
+  for dir in "${CPUS[@]}"; do
+    floor=$(floor_khz "$dir") || exit
+    ((min >= floor)) || die "$EXIT_HW" "preset: min $(fmt_ghz "$min") is below floor $(fmt_ghz "$floor")"
+  done
+}
+
 # Fills TARGET on every CPU with the saved min or max.
 preset_freq_targets() {
   local which=$1 dir
@@ -262,13 +274,14 @@ cmd_preset() {
   esac
   preset_load "$name"
   preset_check_profile
+  load_cpus
+  preset_check_freq
   load_pl
   preset_pl_targets
   require_root
   # Power profile first: switching it rewrites turbo, freq caps and power limits.
   [[ -z ${PRESET[profile]:-} ]] || profile_set "${PRESET[profile]}"
   turbo_set "${PRESET[turbo]}"
-  load_cpus
   order=$(preset_freq_order) || exit
   for which in $order; do
     preset_freq_apply "$which"

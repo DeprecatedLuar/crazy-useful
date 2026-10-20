@@ -77,14 +77,17 @@ make_zones() {
   done
 }
 
-# sudo: logs the call, then runs the command as uid 0 in a user namespace.
+# sudo: logs the call, then runs the command as uid 0 in a user namespace
+# with a reset environment, as sudo does.
 make_sudo_stub() {
   cat >"$TEST_ROOT/bin/sudo" <<'EOF'
 #!/usr/bin/env bash
 echo "$*" >>"$TEST_ROOT/sudo.log"
 [[ $1 == -v ]] && exit 0
 [[ $1 == -- ]] && shift
-exec unshare -r "$@"
+exec env -i PATH="$PATH" HOME=/root SUDO_USER="$(id -un)" TEST_ROOT="$TEST_ROOT" \
+  HZLESS_CPU_ROOT="$HZLESS_CPU_ROOT" HZLESS_POWERCAP_ROOT="$HZLESS_POWERCAP_ROOT" \
+  PP_LAG="${PP_LAG:-0}" unshare -r "$@"
 EOF
   chmod +x "$TEST_ROOT/bin/sudo"
 }
@@ -435,6 +438,62 @@ test_preset_bad_pl_key_no_sudo() {
   hz preset use p
   assert_eq 2 "$CODE" "exit"
   assert_contains "$ERR" "bad or missing MMIO.tau" "error"
+  assert_absent "$TEST_ROOT/sudo.log" "fails before sudo"
+}
+
+test_pl_alias_help() {
+  local alias
+  for alias in pl1 pl2; do
+    hz "$alias"
+    assert_eq 0 "$CODE" "$alias exit: $ERR"
+    assert_contains "$OUT" "usage: hzless pl" "$alias usage"
+    hz "$alias" help
+    assert_eq 0 "$CODE" "$alias help exit: $ERR"
+    assert_contains "$OUT" "usage: hzless pl" "$alias help usage"
+  done
+}
+
+test_freq_turbo_over_full_no_sudo() {
+  hz freq max 150 -t
+  assert_eq 1 "$CODE" "exit"
+  assert_contains "$ERR" "-t takes 0-100%" "error"
+  assert_absent "$TEST_ROOT/sudo.log" "no sudo"
+  assert_eq 1 "$(file_val cpu/intel_pstate/no_turbo)" "turbo untouched"
+}
+
+test_pl_stray_value() {
+  hz pl --long 30 35
+  assert_eq 1 "$CODE" "exit"
+  assert_contains "$ERR" "unexpected value '35'" "error"
+}
+
+test_profile_unparseable_list() {
+  : >"$TEST_ROOT/pp/profiles"
+  hz profile performance
+  assert_eq 2 "$CODE" "exit"
+  assert_contains "$ERR" "unexpected Profiles reply" "error"
+}
+
+test_preset_min_above_max_no_sudo() {
+  hz preset save p
+  local conf
+  conf=$(<"$(preset_conf)")
+  conf=${conf/min=$KHZ_MIN/min=$KHZ_BASE}
+  echo "${conf/max=$KHZ_BASE/max=$KHZ_MIN}" >"$(preset_conf)"
+  hz preset use p
+  assert_eq 2 "$CODE" "exit"
+  assert_contains "$ERR" "min 3.30 GHz is above max 0.40 GHz" "error"
+  assert_absent "$TEST_ROOT/sudo.log" "fails before sudo"
+}
+
+test_preset_min_below_floor_no_sudo() {
+  hz preset save p
+  local conf
+  conf=$(<"$(preset_conf)")
+  echo "${conf/min=$KHZ_MIN/min=100000}" >"$(preset_conf)"
+  hz preset use p
+  assert_eq 2 "$CODE" "exit"
+  assert_contains "$ERR" "min 0.10 GHz is below floor 0.40 GHz" "error"
   assert_absent "$TEST_ROOT/sudo.log" "fails before sudo"
 }
 

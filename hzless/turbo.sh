@@ -74,6 +74,12 @@ turbo_set() {
   echo "turbo $before -> $after"
 }
 
+turbo_enable() {
+  local state
+  state=$(turbo_current) || exit
+  [[ $state == on ]] || turbo_set on
+}
+
 cmd_turbo() {
   if is_help "$@"; then
     echo "$TURBO_USAGE"

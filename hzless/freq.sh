@@ -53,6 +53,7 @@ parse_spec() {
   local value=$1 turbo=$2
   if ((turbo)); then
     [[ $value =~ $RE_PCT ]] || return 1
+    ((10#${value%\%} <= PCT_FULL)) || return 1
     echo "turbo $((10#${value%\%}))"
   elif [[ $value =~ $RE_PCT ]]; then
     echo "pct $((10#${value%\%}))"
@@ -69,7 +70,7 @@ parse_spec() {
 parse_hint() {
   local value=$1 turbo=$2
   if ((turbo)); then
-    echo " (-t takes a %)"
+    echo " (-t takes 0-$PCT_FULL%)"
   elif [[ $value =~ $RE_DECIMAL ]]; then
     echo " (use ${value}g for GHz)"
   fi
@@ -239,7 +240,7 @@ cmd_freq() {
       # The turbo max reads as base while turbo is off, so turbo goes on before planning.
       if [[ $which == max ]] && spec_needs_turbo "$kind" "$n"; then
         require_root
-        [[ $(turbo_current) == on ]] || turbo_set on
+        turbo_enable
       fi
       freq_plan "$which" "$kind" "$n"
       require_root

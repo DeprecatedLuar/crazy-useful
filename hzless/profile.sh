@@ -30,13 +30,16 @@ profile_get() {
 
 # Profile names the daemon offers, one per line.
 profile_list() {
-  local reply
+  local reply rest names=()
   reply=$(busctl --system get-property "$PP_BUS" "$PP_PATH" "$PP_BUS" "$PP_PROFILES_PROP") ||
     die "$EXIT_HW" "cannot read $PP_PROFILES_PROP from $PP_BUS"
-  while [[ $reply =~ $RE_PP_PROFILE ]]; do
-    echo "${BASH_REMATCH[1]}"
-    reply=${reply#*"${BASH_REMATCH[0]}"}
+  rest=$reply
+  while [[ $rest =~ $RE_PP_PROFILE ]]; do
+    names+=("${BASH_REMATCH[1]}")
+    rest=${rest#*"${BASH_REMATCH[0]}"}
   done
+  ((${#names[@]})) || die "$EXIT_HW" "unexpected $PP_PROFILES_PROP reply '$reply'"
+  printf '%s\n' "${names[@]}"
 }
 
 profile_check_name() {

@@ -33,11 +33,12 @@ is_help() {
   (($# == 0)) || [[ $1 =~ $RE_HELP ]]
 }
 
-# Re-runs the original command under sudo when not root.
+# Re-runs the original command under sudo when not root, keeping the
+# caller's config dir since sudo resets the environment.
 require_root() {
   ((EUID == 0)) && return
   command -v sudo >/dev/null || die "$EXIT_HW" "root required and sudo not found"
-  exec sudo -- "$SELF" "${ARGS[@]}"
+  exec sudo -- env "XDG_CONFIG_HOME=${XDG_CONFIG_HOME:-$HOME/.config}" "$SELF" "${ARGS[@]}"
 }
 
 read_uint() {

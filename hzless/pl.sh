@@ -243,6 +243,7 @@ cmd_pl() {
     local -A seen=()
     while (($#)); do
       flag=$1
+      [[ $flag == --* ]] || usage_error "$PL_USAGE" "unexpected value '$flag'"
       [[ -z ${seen[$flag]:-} ]] || usage_error "$PL_USAGE" "$flag given twice"
       seen[$flag]=1
       (($# >= 2)) || usage_error "$PL_USAGE" "$flag needs a value"
@@ -266,4 +267,15 @@ cmd_pl() {
   pl_plan "$pl1" "$pl2" "$tau" "$raise"
   require_root
   pl_commit
+}
+
+# pl1 / pl2: cmd_pl with --long / --short.
+cmd_pl_alias() {
+  local flag=$1
+  shift
+  if is_help "$@"; then
+    echo "$PL_USAGE"
+    return
+  fi
+  cmd_pl "$flag" "$@"
 }
