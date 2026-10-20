@@ -273,6 +273,38 @@ test_sudo_once() {
   assert_eq 1 "$(grep -c -- '^-- ' "$TEST_ROOT/sudo.log")" "one re-exec"
 }
 
+preset_conf() {
+  echo "$TEST_ROOT/config/hzless/presets.conf"
+}
+
+test_preset_save_single() {
+  hz preset save p
+  assert_eq 0 "$CODE" "exit: $ERR"
+  assert_contains "$(<"$(preset_conf)")" "min=$KHZ_MIN"$'\n'"max=$KHZ_BASE"$'\n' "single values"
+}
+
+test_preset_save_mixed_caps() {
+  set_val cpu/cpu1/cpufreq/scaling_max_freq 2000000
+  hz preset save p
+  assert_eq 1 "$CODE" "exit"
+  assert_contains "$ERR" "CPUs have different max caps; set one with hzless freq first" "error"
+  assert_absent "$(preset_conf)" "nothing saved"
+}
+
+test_preset_rejects_list() {
+  hz preset save p
+  local conf
+  conf=$(<"$(preset_conf)")
+  echo "${conf/max=$KHZ_BASE/max=$KHZ_BASE 2000000}" >"$(preset_conf)"
+  hz preset list
+  assert_eq 2 "$CODE" "list exit"
+  assert_contains "$ERR" "bad or missing max" "list error"
+  hz preset use p
+  assert_eq 2 "$CODE" "use exit"
+  assert_contains "$ERR" "bad or missing max" "use error"
+  assert_absent "$TEST_ROOT/sudo.log" "fails before sudo"
+}
+
 # --- runner ------------------------------------------------------------------
 
 main() {

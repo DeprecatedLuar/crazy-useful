@@ -5,7 +5,7 @@ readonly RE_PRESET_NAME='^[A-Za-z0-9_.-]+$'
 readonly RE_PRESET_RESERVED='^(save|add|a|list|ls|use|rm|remove|help|-h|--help)$'
 readonly RE_PRESET_LINE='^([A-Za-z0-9.]+)=(.*)$'
 readonly RE_FORCE_FLAG='^(-f|--force)$'
-readonly RE_UINT_LIST='^[0-9]+( [0-9]+)*$'
+readonly RE_TURBO_STATE='^(on|off)$'
 
 readonly PRESET_USAGE="usage: hzless preset <save <name> [-f] | list | use <name> | rm <name> | <name>>
   save <name>  snapshot power profile, turbo, freq caps, power limits (alias: add, a)
@@ -52,15 +52,19 @@ preset_section() {
     END { exit !found }' "$file"
 }
 
-# Fills PRESET from a saved section.
+# Fills PRESET from a saved section; fails on a bad turbo, min or max.
 preset_load() {
-  local name=$1 section line
+  local name=$1 section line key
   section=$(preset_section "$name") || die "$EXIT_USAGE" "no preset '$name'"
   PRESET=()
   while IFS= read -r line; do
     [[ $line =~ $RE_PRESET_LINE ]] || die "$EXIT_HW" "preset '$name': bad line '$line'"
     PRESET[${BASH_REMATCH[1]}]=${BASH_REMATCH[2]}
   done <<<"$section"
+  [[ ${PRESET[turbo]:-} =~ $RE_TURBO_STATE ]] || die "$EXIT_HW" "preset '$name': bad or missing turbo"
+  for key in min max; do
+    [[ ${PRESET[$key]:-} =~ $RE_UINT ]] || die "$EXIT_HW" "preset '$name': bad or missing $key"
+  done
 }
 
 # Rewrites the file without the named section, then appends the given body under it.
@@ -79,18 +83,16 @@ preset_write() {
   mv "$tmp" "$file" || die "$EXIT_HW" "cannot replace $file"
 }
 
-# One value when every CPU matches, else one per CPU in CPUS order.
-preset_freq_values() {
-  local file=$1 dir value values=()
+# The min or max cap shared by every CPU; fails if they differ.
+preset_freq_value() {
+  local which=$1 dir value first=""
   for dir in "${CPUS[@]}"; do
-    value=$(read_uint "$dir/$file") || exit
-    values+=("$value")
+    value=$(read_uint "$dir/scaling_${which}_freq") || exit
+    first=${first:-$value}
+    ((value == first)) ||
+      die "$EXIT_USAGE" "CPUs have different $which caps; set one with hzless freq first"
   done
-  if (($(printf '%s\n' "${values[@]}" | sort -u | wc -l) == 1)); then
-    echo "${values[0]}"
-  else
-    echo "${values[*]}"
-  fi
+  echo "$first"
 }
 
 # Prints the current state as key=value lines.
@@ -106,9 +108,9 @@ preset_snapshot() {
   fi
   value=$(turbo_current) || exit
   echo "turbo=$value"
-  value=$(preset_freq_values scaling_min_freq) || exit
+  value=$(preset_freq_value min) || exit
   echo "min=$value"
-  value=$(preset_freq_values scaling_max_freq) || exit
+  value=$(preset_freq_value max) || exit
   echo "max=$value"
   for label in "${PL_LABELS[@]}"; do
     for field in "${PL_FIELDS[@]}"; do
@@ -120,14 +122,9 @@ preset_snapshot() {
 
 # One line from PRESET: power profile, turbo, max cap, lowest PL1/PL2 across zones.
 preset_summary() {
-  local line="" max=${PRESET[max]:-} field key low
+  local line="" field key low
   [[ -n ${PRESET[profile]:-} ]] && line+="profile ${PRESET[profile]}  "
-  line+="turbo ${PRESET[turbo]:-?}  "
-  if [[ $max =~ $RE_UINT ]]; then
-    line+="max $(fmt_ghz "$max")  "
-  else
-    line+="max per-CPU  "
-  fi
+  line+="turbo ${PRESET[turbo]}  max $(fmt_ghz "${PRESET[max]}")  "
   for field in PL1 PL2; do
     low=""
     for key in "${!PRESET[@]}"; do
@@ -183,16 +180,12 @@ preset_rm() {
   echo "removed $1"
 }
 
-# Fills TARGET from a saved min/max value: one for every CPU, or one per CPU.
+# Fills TARGET on every CPU with the saved min or max.
 preset_freq_targets() {
-  local key=$1 values i
-  [[ ${PRESET[$key]:-} =~ $RE_UINT_LIST ]] || die "$EXIT_HW" "preset: bad or missing $key"
-  read -ra values <<<"${PRESET[$key]}"
-  ((${#values[@]} == 1 || ${#values[@]} == ${#CPUS[@]})) ||
-    die "$EXIT_USAGE" "preset has ${#values[@]} $key values for ${#CPUS[@]} CPUs"
+  local which=$1 dir
   TARGET=() BEFORE=()
-  for i in "${!CPUS[@]}"; do
-    TARGET[${CPUS[i]}]=${values[i]:-${values[0]}}
+  for dir in "${CPUS[@]}"; do
+    TARGET[$dir]=${PRESET[$which]}
   done
 }
 
@@ -229,9 +222,8 @@ preset_pl_targets() {
   done
 }
 
-# Fails unless PRESET holds a usable turbo state and, if it names a profile, a daemon is up.
-preset_check() {
-  [[ ${PRESET[turbo]:-} =~ ^(on|off)$ ]] || die "$EXIT_HW" "preset: bad or missing turbo"
+# Fails if PRESET names a profile but no daemon is up.
+preset_check_profile() {
   [[ -z ${PRESET[profile]:-} ]] || profile_available ||
     die "$EXIT_HW" "preset sets a power profile but no daemon is on D-Bus"
 }
@@ -268,7 +260,7 @@ cmd_preset() {
       ;;
   esac
   preset_load "$name"
-  preset_check
+  preset_check_profile
   require_root
   # Power profile first: switching it rewrites turbo, freq caps and power limits.
   [[ -z ${PRESET[profile]:-} ]] || profile_set "${PRESET[profile]}"
