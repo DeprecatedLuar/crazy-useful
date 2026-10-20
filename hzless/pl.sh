@@ -11,13 +11,15 @@ readonly -a PL_FIELDS=(PL1 PL2 tau)
 readonly TAU_MIN_NUM=4
 readonly TAU_MIN_DEN=5
 
-readonly PL_USAGE="usage: hzless pl <status | <W> [<W>] | tau <sec>>
+readonly PL_USAGE="usage: hzless pl <status | <W> [<W>] | [--long <W>] [--short <W>] [--tau <sec>]>
        hzless pl1 | pl2 <W>
-  status       show PL1, PL2, tau per interface
-  <W>          PL1 = PL2 = W watts
-  <W1> <W2>    PL1 = W1, PL2 = W2
-  tau <sec>    set PL1 time window
-  pl1 | pl2    set one limit; pl1 above PL2 raises PL2"
+  status         show PL1, PL2, tau per interface
+  <W>            PL1 = PL2 = W watts
+  <W1> <W2>      PL1 = W1, PL2 = W2
+  --long <W>     PL1 (sustained); above PL2 raises PL2
+  --short <W>    PL2 (burst)
+  --tau <sec>    PL1 time window
+  pl1 | pl2 <W>  same as --long | --short"
 
 declare -a PL_LABELS=()
 declare -A PL_PATH=()
@@ -236,10 +238,23 @@ cmd_pl() {
     pl_show
     return
   fi
-  local pl1="" pl2="" tau=""
-  if [[ $1 == tau ]]; then
-    (($# == 2)) || usage_error "$PL_USAGE" "pl tau needs one value"
-    tau=$(pl_parse "$2") || exit
+  local pl1="" pl2="" tau="" raise=0 flag
+  if [[ $1 == --* ]]; then
+    local -A seen=()
+    while (($#)); do
+      flag=$1
+      [[ -z ${seen[$flag]:-} ]] || usage_error "$PL_USAGE" "$flag given twice"
+      seen[$flag]=1
+      (($# >= 2)) || usage_error "$PL_USAGE" "$flag needs a value"
+      case $flag in
+        --long) pl1=$(pl_parse "$2") || exit ;;
+        --short) pl2=$(pl_parse "$2") || exit ;;
+        --tau) tau=$(pl_parse "$2") || exit ;;
+        *) usage_error "$PL_USAGE" "unknown option '$flag'" ;;
+      esac
+      shift 2
+    done
+    [[ -n $pl1 && -z $pl2 ]] && raise=1
   else
     (($# <= 2)) || usage_error "$PL_USAGE" "pl takes one or two watt values"
     pl1=$(pl_parse "$1") || exit
@@ -248,27 +263,7 @@ cmd_pl() {
       pl2=$(pl_parse "$2") || exit
     fi
   fi
-  pl_plan "$pl1" "$pl2" "$tau" 0
-  require_root
-  pl_commit
-}
-
-# pl1 <W> / pl2 <W>: set one limit.
-cmd_pl_one() {
-  local which=$1 value raise=0 pl1="" pl2=""
-  shift
-  if is_help "$@"; then
-    echo "$PL_USAGE"
-    return
-  fi
-  (($# == 1)) || usage_error "$PL_USAGE" "$which takes one watt value"
-  load_pl
-  value=$(pl_parse "$1") || exit
-  case $which in
-    pl1) pl1=$value raise=1 ;;
-    pl2) pl2=$value ;;
-  esac
-  pl_plan "$pl1" "$pl2" "" "$raise"
+  pl_plan "$pl1" "$pl2" "$tau" "$raise"
   require_root
   pl_commit
 }

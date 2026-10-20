@@ -305,6 +305,60 @@ test_preset_rejects_list() {
   assert_absent "$TEST_ROOT/sudo.log" "fails before sudo"
 }
 
+pl_val() {
+  file_val "powercap/intel-rapl:0/constraint_$1"
+}
+
+test_pl_long_only() {
+  local watts=30
+  hz pl --long "$watts"
+  assert_eq 0 "$CODE" "exit: $ERR"
+  assert_eq $((watts * UW_PER_W)) "$(pl_val 0_power_limit_uw)" "PL1"
+  assert_eq "$UW_PL2" "$(pl_val 1_power_limit_uw)" "PL2 kept"
+}
+
+test_pl_short_only() {
+  local watts=80
+  hz pl --short "$watts"
+  assert_eq 0 "$CODE" "exit: $ERR"
+  assert_eq "$UW_PL1" "$(pl_val 0_power_limit_uw)" "PL1 kept"
+  assert_eq $((watts * UW_PER_W)) "$(pl_val 1_power_limit_uw)" "PL2"
+}
+
+test_pl_tau_flag() {
+  local sec=10
+  hz pl --tau "$sec"
+  assert_eq 0 "$CODE" "exit: $ERR"
+  assert_eq $((sec * UW_PER_W)) "$(pl_val 0_time_window_us)" "tau"
+}
+
+test_pl_long_above_short_errors() {
+  hz pl --long 70 --short 50
+  assert_eq 1 "$CODE" "exit"
+  assert_contains "$ERR" "PL2 50 W is below PL1 70 W" "error"
+  assert_eq "$UW_PL1" "$(pl_val 0_power_limit_uw)" "PL1 kept"
+}
+
+test_pl_mixed_forms() {
+  hz pl 35 --short 50
+  assert_eq 1 "$CODE" "exit"
+}
+
+test_pl_tau_word_gone() {
+  hz pl tau 10
+  assert_eq 1 "$CODE" "exit"
+}
+
+test_pl_flag_repeated() {
+  hz pl --long 30 --long 40
+  assert_eq 1 "$CODE" "exit"
+}
+
+test_pl_flag_missing_value() {
+  hz pl --long
+  assert_eq 1 "$CODE" "exit"
+}
+
 # --- runner ------------------------------------------------------------------
 
 main() {
