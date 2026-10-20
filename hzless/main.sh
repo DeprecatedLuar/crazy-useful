@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # hzless: CPU frequency and power limit control. Each command prints its usage with no args,
 # shows state with `status`, and sets it with other subcommands.
+# shellcheck source-path=SCRIPTDIR
 
 SELF=$(realpath "${BASH_SOURCE[0]}")
 readonly SELF

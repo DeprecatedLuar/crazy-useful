@@ -17,7 +17,6 @@ declare -a CPUS=()
 declare -A TARGET=()
 declare -A BEFORE=()
 declare -A CLAMPED=()
-declare TURBO_REVERT=0
 
 # Fills CPUS with every cpufreq policy dir.
 load_cpus() {
@@ -107,6 +106,7 @@ spec_needs_turbo() {
 # Fills TARGET and CLAMPED for every CPU; fails before any write.
 freq_plan() {
   local which=$1 kind=$2 n=$3 dir floor base tmax target other
+  TARGET=() BEFORE=() CLAMPED=()
   for dir in "${CPUS[@]}"; do
     floor=$(floor_khz "$dir") || exit
     base=$(ceiling_khz "$dir") || exit
@@ -156,29 +156,11 @@ freq_verify() {
     awk '{ n = $1; $1 = ""; sub(/^ /, ""); print $0 " (" n " CPUs)" }'
 }
 
-# Exit trap: turns turbo back off when freq_set enabled it and then failed.
-freq_revert_turbo() {
-  if ((TURBO_REVERT)); then turbo_set off; fi
-}
-
-# The turbo max reads as base while turbo is off, so turbo goes on before planning.
-freq_set() {
-  local which=$1 kind=$2 n=$3
-  TARGET=() BEFORE=() CLAMPED=()
-  if [[ $which == max ]] && spec_needs_turbo "$kind" "$n"; then
-    require_root
-    if [[ $(turbo_current) == off ]]; then
-      TURBO_REVERT=1
-      trap freq_revert_turbo EXIT
-      turbo_set on
-    fi
-  fi
-  freq_plan "$which" "$kind" "$n"
-  require_root
+# Writes the planned TARGET for one bound and verifies it.
+freq_commit() {
   freq_report_clamps
-  freq_apply "$which"
-  freq_verify "$which"
-  TURBO_REVERT=0
+  freq_apply "$1"
+  freq_verify "$1"
 }
 
 freq_show_cpu() {
@@ -225,18 +207,13 @@ freq_show() {
   done
 }
 
-freq_reset() {
-  freq_set min floor 0
-  freq_set max pct "$PCT_FULL"
-}
-
 cmd_freq() {
   if is_help "$@"; then
     echo "$FREQ_USAGE"
     return
   fi
   load_cpus
-  local spec
+  local spec kind n
   case $1 in
     status)
       (($# == 1)) || usage_error "$FREQ_USAGE" "freq status takes no value"
@@ -258,12 +235,23 @@ cmd_freq() {
       ((turbo)) && [[ $which == min ]] && usage_error "$FREQ_USAGE" "-t applies to max only"
       spec=$(parse_spec "$value" "$turbo") ||
         usage_error "$FREQ_USAGE" "cannot parse '$value'$(parse_hint "$value" "$turbo")"
-      # shellcheck disable=SC2086
-      freq_set "$which" $spec
+      read -r kind n <<<"$spec"
+      # The turbo max reads as base while turbo is off, so turbo goes on before planning.
+      if [[ $which == max ]] && spec_needs_turbo "$kind" "$n"; then
+        require_root
+        [[ $(turbo_current) == on ]] || turbo_set on
+      fi
+      freq_plan "$which" "$kind" "$n"
+      require_root
+      freq_commit "$which"
       ;;
     reset)
       (($# == 1)) || usage_error "$FREQ_USAGE" "freq reset takes no value"
-      freq_reset
+      require_root
+      freq_plan min floor 0
+      freq_commit min
+      freq_plan max pct "$PCT_FULL"
+      freq_commit max
       ;;
     *) usage_error "$FREQ_USAGE" "unknown freq command '$1'" ;;
   esac

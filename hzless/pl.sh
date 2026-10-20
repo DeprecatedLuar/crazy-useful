@@ -111,9 +111,11 @@ pl_stuck() {
   fi
 }
 
-# Fills PL_TARGET for every zone; fails before any write.
+# Fills PL_TARGET for every zone from PL1, PL2, tau (millionths; empty keeps
+# current); fails before any write. raise=1 lets PL1 lift PL2 instead of failing.
 pl_plan() {
   local pl1=$1 pl2=$2 tau=$3 raise=$4 label cur1 cur2 t1 t2
+  PL_TARGET=() PL_RAISED=0
   for label in "${PL_LABELS[@]}"; do
     cur1=$(pl_read "$label" PL1) || exit
     cur2=$(pl_read "$label" PL2) || exit
@@ -163,12 +165,8 @@ pl_apply() {
   return 0
 }
 
-# Sets any of PL1, PL2, tau (millionths; empty keeps current). raise=1 lets
-# PL1 lift PL2 instead of failing.
-pl_set() {
-  PL_TARGET=() PL_RAISED=0
-  pl_plan "$@"
-  require_root
+# Writes the planned PL_TARGET.
+pl_commit() {
   ((PL_RAISED)) && echo "PL2 raised to match"
   pl_apply
 }
@@ -233,32 +231,31 @@ cmd_pl() {
     return
   fi
   load_pl
-  local pl1 pl2 tau
-  case $1 in
-    status)
-      (($# == 1)) || usage_error "$PL_USAGE" "pl status takes no value"
-      pl_show
-      ;;
-    tau)
-      (($# == 2)) || usage_error "$PL_USAGE" "pl tau needs one value"
-      tau=$(pl_parse "$2") || exit
-      pl_set "" "" "$tau" 0
-      ;;
-    *)
-      (($# <= 2)) || usage_error "$PL_USAGE" "pl takes one or two watt values"
-      pl1=$(pl_parse "$1") || exit
-      pl2=$pl1
-      if (($# == 2)); then
-        pl2=$(pl_parse "$2") || exit
-      fi
-      pl_set "$pl1" "$pl2" "" 0
-      ;;
-  esac
+  if [[ $1 == status ]]; then
+    (($# == 1)) || usage_error "$PL_USAGE" "pl status takes no value"
+    pl_show
+    return
+  fi
+  local pl1="" pl2="" tau=""
+  if [[ $1 == tau ]]; then
+    (($# == 2)) || usage_error "$PL_USAGE" "pl tau needs one value"
+    tau=$(pl_parse "$2") || exit
+  else
+    (($# <= 2)) || usage_error "$PL_USAGE" "pl takes one or two watt values"
+    pl1=$(pl_parse "$1") || exit
+    pl2=$pl1
+    if (($# == 2)); then
+      pl2=$(pl_parse "$2") || exit
+    fi
+  fi
+  pl_plan "$pl1" "$pl2" "$tau" 0
+  require_root
+  pl_commit
 }
 
-# pl1 <W> / pl2 <W>: set one limit through pl_set.
+# pl1 <W> / pl2 <W>: set one limit.
 cmd_pl_one() {
-  local which=$1 value
+  local which=$1 value raise=0 pl1="" pl2=""
   shift
   if is_help "$@"; then
     echo "$PL_USAGE"
@@ -268,7 +265,10 @@ cmd_pl_one() {
   load_pl
   value=$(pl_parse "$1") || exit
   case $which in
-    pl1) pl_set "$value" "" "" 1 ;;
-    pl2) pl_set "" "$value" "" 0 ;;
+    pl1) pl1=$value raise=1 ;;
+    pl2) pl2=$value ;;
   esac
+  pl_plan "$pl1" "$pl2" "" "$raise"
+  require_root
+  pl_commit
 }

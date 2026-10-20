@@ -229,25 +229,11 @@ preset_pl_targets() {
   done
 }
 
-# Power profile first: switching it rewrites turbo, freq caps and power limits.
-preset_use() {
-  local name=$1 which order
-  require_root
-  preset_load "$name"
+# Fails unless PRESET holds a usable turbo state and, if it names a profile, a daemon is up.
+preset_check() {
   [[ ${PRESET[turbo]:-} =~ ^(on|off)$ ]] || die "$EXIT_HW" "preset: bad or missing turbo"
-  if [[ -n ${PRESET[profile]:-} ]]; then
-    profile_available || die "$EXIT_HW" "preset sets a power profile but no daemon is on D-Bus"
-    profile_set "${PRESET[profile]}"
-  fi
-  turbo_set "${PRESET[turbo]}"
-  load_cpus
-  order=$(preset_freq_order) || exit
-  for which in $order; do
-    preset_freq_apply "$which"
-  done
-  load_pl
-  preset_pl_targets
-  pl_apply
+  [[ -z ${PRESET[profile]:-} ]] || profile_available ||
+    die "$EXIT_HW" "preset sets a power profile but no daemon is on D-Bus"
 }
 
 cmd_preset() {
@@ -255,26 +241,43 @@ cmd_preset() {
     echo "$PRESET_USAGE"
     return
   fi
+  local name which
   case $1 in
     save|add|a)
       shift
       preset_save "$@"
+      return
       ;;
     list|ls)
       (($# == 1)) || usage_error "$PRESET_USAGE" "list takes no value"
       preset_list
-      ;;
-    use)
-      (($# == 2)) || usage_error "$PRESET_USAGE" "use needs one name"
-      preset_use "$2"
+      return
       ;;
     rm|remove)
       (($# == 2)) || usage_error "$PRESET_USAGE" "$1 needs one name"
       preset_rm "$2"
+      return
+      ;;
+    use)
+      (($# == 2)) || usage_error "$PRESET_USAGE" "use needs one name"
+      name=$2
       ;;
     *)
       (($# == 1)) || usage_error "$PRESET_USAGE" "unknown preset command '$1'"
-      preset_use "$1"
+      name=$1
       ;;
   esac
+  preset_load "$name"
+  preset_check
+  require_root
+  # Power profile first: switching it rewrites turbo, freq caps and power limits.
+  [[ -z ${PRESET[profile]:-} ]] || profile_set "${PRESET[profile]}"
+  turbo_set "${PRESET[turbo]}"
+  load_cpus
+  for which in $(preset_freq_order); do
+    preset_freq_apply "$which"
+  done
+  load_pl
+  preset_pl_targets
+  pl_apply
 }

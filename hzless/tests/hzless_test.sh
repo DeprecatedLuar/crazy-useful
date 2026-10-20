@@ -247,6 +247,32 @@ test_preset_roundtrip() {
   assert_eq "$KHZ_BASE" "$(file_val cpu/cpu0/cpufreq/scaling_max_freq)" "max restored"
 }
 
+test_bad_input_no_sudo() {
+  local -a cmd
+  for cmd in "freq max abc" "pl -5" "turbo maybe" "preset use missing"; do
+    read -ra cmd <<<"$cmd"
+    hz "${cmd[@]}"
+    assert_eq 1 "$CODE" "${cmd[*]} exit"
+  done
+  assert_absent "$TEST_ROOT/sudo.log" "no sudo"
+}
+
+test_status_no_sudo() {
+  local -a cmd
+  for cmd in "status" "freq status" "pl status" "preset list"; do
+    read -ra cmd <<<"$cmd"
+    hz "${cmd[@]}"
+    assert_eq 0 "$CODE" "${cmd[*]} exit: $ERR"
+  done
+  assert_absent "$TEST_ROOT/sudo.log" "no sudo"
+}
+
+test_sudo_once() {
+  hz freq max 80
+  assert_eq 0 "$CODE" "exit: $ERR"
+  assert_eq 1 "$(grep -c -- '^-- ' "$TEST_ROOT/sudo.log")" "one re-exec"
+}
+
 # --- runner ------------------------------------------------------------------
 
 main() {

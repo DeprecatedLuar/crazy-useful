@@ -66,7 +66,6 @@ turbo_set() {
   local want=$1 control file on off before after value
   control=$(turbo_control) || exit
   read -r file on off <<<"$control"
-  require_root
   before=$(turbo_state "$file" "$on" "$off") || exit
   if [[ $want == on ]]; then value=$on; else value=$off; fi
   write_value "$file" "$value"
@@ -88,6 +87,7 @@ cmd_turbo() {
       ;;
     on|off)
       (($# == 1)) || usage_error "$TURBO_USAGE" "turbo $1 takes no value"
+      require_root
       turbo_set "$1"
       ;;
     *) usage_error "$TURBO_USAGE" "unknown turbo command '$1'" ;;

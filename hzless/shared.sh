@@ -37,7 +37,6 @@ is_help() {
 require_root() {
   ((EUID == 0)) && return
   command -v sudo >/dev/null || die "$EXIT_HW" "root required and sudo not found"
-  sudo -v || die "$EXIT_HW" "sudo failed"
   exec sudo -- "$SELF" "${ARGS[@]}"
 }
 
